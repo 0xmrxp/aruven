@@ -97,8 +97,31 @@ Next.js app, single purpose: **prove, then sell**.
 
 ## 7. SaaS / revenue layer (beyond the token)
 
-- **ARUVEN-as-a-service**: the vault + hook + agent stack packaged so other launches can deploy "agent-run" tokens. Fee: 10–20% of their protocol fees, paid to the ARUVEN treasury. This is the long-term business: infrastructure for honest token launches.
+- **ARUVEN-as-a-service**: the vault + hook + agent stack, deployed by third parties through the **AruvenFactory** — never by hand-copying source. See §7a for how the revenue share is enforced.
 - **Journal/proof API**: read endpoints free; alerting + analytics as a paid tier for traders and terminals (Dexscreener-style integration).
+
+### 7a. Revenue enforcement model
+
+Open-source code cannot force anyone to pay. Enforcement comes from WHERE the fee split lives, in four layers:
+
+| Layer | Mechanism | Strength |
+|---|---|---|
+| Agent/backend code | fee routing in Python | none — deletable in a fork. Never the primary path. |
+| Hand-deployed contracts | copy source, change treasury address | weak — immutability locks a deployed instance, not the fork. |
+| **AruvenFactory (primary)** | third parties launch through our factory; the 15% fee split to the ARUVEN treasury is baked into the bytecode the factory deploys, not a parameter | strong — removing the split requires redeploying a new pool (kills liquidity and holders). Same retention model as major protocol factories. |
+| Non-technical (support) | Source-available license (Uniswap-BSL-style: free use, commercial = pay), "ARUVEN-powered" badge, indexer/dashboard integration only for factory launches, cluster liquidity & shared agent infra | soft moat — serious teams comply for clean legal/listing posture and visibility. |
+
+Honest limits: nothing stops a from-scratch clone signing "ARUVEN-style" (as pump.fun clones prove). What we retain: the name, the audited code, the dashboard, and the easiest on-ramp.
+
+### 7b. Deployments directory (frontend)
+
+Every launch through the factory is indexed and listed on the ARUVEN frontend:
+
+- Auto-discovery: `Launch(token, vault, hook, creator, params)` event from the factory → indexer → public directory.
+- Per-deployment page: token name/symbol/CA, vault CA + live holdings/NAV, hook fee config, agent journal feed (same components as the main $ARUVEN dashboard), PnL vs benchmark, creator links.
+- Verified badge only for factory launches; forks/clones are not indexed — this is the visibility moat in §7a.
+- API: `/deployments` on the public API for terminals and other apps to consume.
+
 
 ## 8. $15 budget breakdown
 
