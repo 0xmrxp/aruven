@@ -1,0 +1,49 @@
+# ARUVEN Agent configuration (example — copy to config.yaml)
+rpc_url: https://rpc.testnet.chain.robinhood.com
+chain_id: 46630
+
+# addresses (fill after Phase 1 deployment)
+vault_address: "0x0000000000000000000000000000000000000000"
+aruven_token: "0x0000000000000000000000000000000000000000"
+strategy_tokens:
+  - name: usdg
+    address: "0x0000000000000000000000000000000000000000"
+    decimals: 18
+  - name: nvda
+    address: "0x0000000000000000000000000000000000000000"
+    decimals: 18
+
+# executor wallet: NEVER the deployer; fund with gas only
+executor_private_key_env: ARUVEN_EXECUTOR_KEY
+
+# risk gates (soft — the vault enforces the hard versions on-chain)
+risk:
+  max_trade_bps: 500        # match vault
+  daily_loss_bps: 200       # match vault
+  min_interval_sec: 3600    # match vault
+  max_slippage_bps: 50
+  min_usdg_balance: 0       # don't trade below this
+
+# strategy
+strategy:
+  name: mean_reversion
+  rsi_period: 14
+  rsi_low: 30
+  rsi_high: 70
+  min_edge_bps: 25          # only trade when expected edge >= 25 bps
+
+# LLM review (optional; set to null to disable)
+llm:
+  enabled: false
+  base_url: ""
+  api_key_env: ARUVEN_LLM_KEY
+  model: ""
+
+# journal
+journal:
+  path: ./journal.ndjson
+  epoch_checkpoint: true     # submit head hash via vault.rollEpoch
+
+# loop
+loop:
+  interval_sec: 900

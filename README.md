@@ -17,7 +17,7 @@ An open-source autonomous trading agent manages a fully on-chain, verifiable tre
 | **Token** | ERC-20 with capped supply, deployed via a Doppler-style fair-launch flow | No presale, no team allocation, no VC unlock schedules |
 | **Pair** | $ARUVEN × tokenized stock ($NVDA et al.) + $ARUVEN × USDG on Uniswap v4 | Price is expressed in *compute* (or whatever underlying the community votes), not just USD |
 | **Vault** | Non-custodial treasury contract; fees route in automatically, withdrawals only via timelocked governance | Treasury is transparent by construction, not by promise |
-| **Agent** | Open-source trading agent (fork of the [AutoCEX](https://github.com/0xmrxp/autocex) pipeline: screen → score → strategy → risk gate → LLM review → execute → journal) | The "autonomous trader" is auditable code, not marketing |
+| **Agent** | Open-source trading agent with a disciplined pipeline: screen → score → strategy → risk gate → LLM review → execute → journal | The "autonomous trader" is auditable code, not marketing |
 | **Proof** | On-chain proof-of-reserve + a public, read-only agent journal | Anyone can reconcile the vault statement against the chain, transaction by transaction |
 
 ## How it works
@@ -55,7 +55,7 @@ An open-source autonomous trading agent manages a fully on-chain, verifiable tre
 
 - **Phase 0 — Foundations** ✅ repo, architecture docs, contract design
 - **Phase 1 — Contracts** ✅ code + tests written; pending: testnet deploy + audit review (see `contracts/`)
-- **Phase 2 — Agent**: port the AutoCEX pipeline to Robinhood Chain pools, paper-trading against the real vault state, journal publisher
+- **Phase 2 — Agent** ✅ code + tests written (`agent/`): pipeline, risk gates, LLM review, hash-chained journal, dry-run executor; pending: live tx signer + price feed (Phase 3 wiring)
 - **Phase 3 — Frontend**: proof-of-reserve dashboard, live agent journal, governance UI
 - **Phase 4 — Launch**: fair-launch distribution, listing, agent live
 

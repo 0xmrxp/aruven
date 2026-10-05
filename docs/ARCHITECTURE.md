@@ -26,7 +26,7 @@ Complete system breakdown: contracts, agent, backend, frontend, and the economic
          │                                     │
 ┌────────┴──────────┐              ┌───────────┴──────────────┐
 │  aruven-backend   │              │  aruven-agent            │
-│  • RPC indexer    │◄─── events ──│  • AutoCEX pipeline      │
+│  • RPC indexer    │◄─── events ──│  • ARUVEN pipeline      │
 │  • vault state    │   journal    │  • risk-gated executor   │
 │  • REST/GraphQL   │              │  • journal publisher     │
 │  • burn scheduler │              └──────────────────────────┘
@@ -57,7 +57,7 @@ Complete system breakdown: contracts, agent, backend, frontend, and the economic
 
 ## 3. Agent (the "autonomous trader")
 
-Port of the AutoCEX pipeline, adapted to Robinhood Chain:
+The autonomous trader pipeline, built for Robinhood Chain:
 
 1. **Screen** — liquidity, volume, spread, volatility of the vault's tradable pairs.
 2. **Score** — strategy ranking from journal history + on-chain pool state.
