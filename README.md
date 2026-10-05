@@ -54,7 +54,7 @@ An open-source autonomous trading agent manages a fully on-chain, verifiable tre
 ## Roadmap
 
 - **Phase 0 — Foundations** ✅ repo, architecture docs, contract design
-- **Phase 1 — Contracts**: vault, governance, hook, launch (testnet → mainnet)
+- **Phase 1 — Contracts** ✅ code + tests written; pending: testnet deploy + audit review (see `contracts/`)
 - **Phase 2 — Agent**: port the AutoCEX pipeline to Robinhood Chain pools, paper-trading against the real vault state, journal publisher
 - **Phase 3 — Frontend**: proof-of-reserve dashboard, live agent journal, governance UI
 - **Phase 4 — Launch**: fair-launch distribution, listing, agent live
