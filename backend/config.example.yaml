@@ -1,0 +1,31 @@
+# ARUVEN backend configuration (example — copy to config.yaml)
+rpc_url: https://rpc.testnet.chain.robinhood.com
+chain_id: 46630
+
+# addresses (fill after deployment)
+vault_address: "0x0000000000000000000000000000000000000000"
+aruven_token: "0x0000000000000000000000000000000000000000"
+factory_address: "0x0000000000000000000000000000000000000000"
+governor_address: "0x0000000000000000000000000000000000000000"
+
+# tracked strategy tokens (name -> address; first is the stablecoin)
+strategy_tokens:
+  usdg: "0x0000000000000000000000000000000000000000"
+  nvda: "0x0000000000000000000000000000000000000000"
+
+# price source for NAV (Phase 3: static; Phase 4: pool spot from the indexer)
+prices:
+  usdg: 1.0
+  nvda: 235.0
+
+storage:
+  db_path: ./aruven.db
+
+api:
+  host: 127.0.0.1
+  port: 8000
+
+indexer:
+  poll_interval_sec: 15
+  start_block: 0        # 0 = deploy block; full re-derive
+  confirmations: 3

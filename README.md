@@ -56,7 +56,7 @@ An open-source autonomous trading agent manages a fully on-chain, verifiable tre
 - **Phase 0 — Foundations** ✅ repo, architecture docs, contract design
 - **Phase 1 — Contracts** ✅ code + tests written; pending: testnet deploy + audit review (see `contracts/`)
 - **Phase 2 — Agent** ✅ code + tests written (`agent/`): pipeline, risk gates, LLM review, hash-chained journal, dry-run executor; pending: live tx signer + price feed (Phase 3 wiring)
-- **Phase 3 — Frontend**: proof-of-reserve dashboard, live agent journal, governance UI
+- **Phase 3 — Frontend + Backend** ✅ (`backend/`, `frontend/`): indexer, REST API with /verify trust endpoint, EIP-1559 signer, Next.js dashboard; pending: deploy to VPS, pool-spot NAV, governance proposal reads
 - **Phase 4 — Launch**: fair-launch distribution, listing, agent live
 
 ## Repository layout
