@@ -13,7 +13,7 @@ class Observation:
     ts: float
     token: str
     price: float
-    rsi: float
+    rsi: Optional[float]        # None when price history is too short for the period
     volume_24h: float
     vault_balance: int          # raw units of the token in the vault
     usdg_balance: int           # raw units of USDG in the vault

@@ -16,16 +16,17 @@ class Scorer:
         z = zscore(series) or 0.0
         # edge thesis: mean reversion — dislocation * reversal strength
         dislocation_bps = abs(z) * 100  # rough: 1 sigma ~ 100 bps of reversion edge
-        strength = min(1.0, abs(obs.rsi - 50.0) / 25.0)
+        rsi = obs.rsi if obs.rsi is not None else 50.0
+        strength = min(1.0, abs(rsi - 50.0) / 25.0)
         edge = dislocation_bps * strength
-        vol = (sum((x - sum(series) / len(series)) ** 2 for x in series)
-               / max(1, len(series))) ** 0.5
+        mean = sum(series) / len(series) if series else 0.0
+        vol = (sum((x - mean) ** 2 for x in series) / max(1, len(series))) ** 0.5
         return Score(
             token=obs.token,
             edge_bps=edge,
             zscore=z,
             volatility=vol,
-            rsi=obs.rsi,
+            rsi=rsi,
         )
 
 
@@ -38,6 +39,14 @@ class MeanReversionStrategy:
 
     def propose(self, obs: Observation, score: Score) -> Proposal | None:
         s = self.cfg.strategy
+        # Without a real RSI (not enough price history) there is no signal to
+        # act on. Previously a missing RSI was coerced to 50.0, which silently
+        # disabled both branches and made the agent look "cautious" while it
+        # could never trade at all — refuse explicitly instead.
+        if obs.rsi is None:
+            return None
+        if obs.price <= 0:
+            return None
         if score.edge_bps < s.min_edge_bps:
             return None
         if score.zscore < -1.0 and obs.rsi <= s.rsi_low:
@@ -46,6 +55,8 @@ class MeanReversionStrategy:
             if amount_in == 0:
                 return None
             expected = int(amount_in / obs.price)
+            if expected <= 0:
+                return None
             return Proposal(
                 token_in=self.stable,
                 token_out=obs.token,
@@ -64,6 +75,8 @@ class MeanReversionStrategy:
             if amount_in == 0:
                 return None
             expected = int(amount_in * obs.price)
+            if expected <= 0:
+                return None
             return Proposal(
                 token_in=obs.token,
                 token_out=self.stable,

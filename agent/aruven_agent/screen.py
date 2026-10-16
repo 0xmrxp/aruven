@@ -1,66 +1,130 @@
-"""Stage 1 — screen: build observations from RPC + math."""
+"""Stage 1 — screen: build observations from RPC + market data."""
 from __future__ import annotations
 
+import json
 import time
+import urllib.parse
+import urllib.request
 from typing import Optional
 
-from .config import AgentConfig
+from aruven_common.eip1559 import keccak256
+
+from .config import AgentConfig, PriceFeedConfig
 from .types import Observation
+
+
+def _sel(sig: str) -> str:
+    """4-byte function selector, keccak('name(types)')[:4]."""
+    return "0x" + keccak256(sig.encode()).hex()[:8]
 
 
 class ChainClient:
     """Minimal JSON-RPC client (stdlib only, no web3 dependency)."""
 
-    def __init__(self, rpc_url: str, chain_id: int):
-        import json
-        import urllib.request
+    def __init__(self, rpc_url: str, chain_id: int, timeout: int = 30):
         self._rpc = rpc_url
         self._chain_id = chain_id
-        self._json = json
-        self._request = urllib.request.Request
-        self._urlopen = urllib.request.urlopen
+        self._timeout = timeout
 
     def call(self, method: str, params: list) -> object:
-        payload = self._json.dumps(
+        payload = json.dumps(
             {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
         ).encode()
-        req = self._request(
+        req = urllib.request.Request(
             self._rpc, data=payload, headers={"Content-Type": "application/json"}
         )
-        with self._urlopen(req, timeout=30) as resp:
-            body = self._json.loads(resp.read())
+        with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+            body = json.loads(resp.read())
         if "error" in body:
             raise RuntimeError(f"rpc error: {body['error']}")
         return body["result"]
 
+    # ---- reads ----
     def chain_id(self) -> int:
         return int(self.call("eth_chainId", []), 16)
 
     def balance_of(self, token: str, holder: str) -> int:
-        data = "0x70a08231" + "00" * 12 + holder[2:].lower()
+        data = _sel("balanceOf(address)") + "00" * 12 + holder.removeprefix("0x").lower()
         res = self.call("eth_call", [{"to": token, "data": data}, "latest"])
         return int(res, 16)
 
+    def _call_vault_uint(self, vault: str, sig: str) -> int:
+        res = self.call("eth_call", [{"to": vault, "data": _sel(sig)}, "latest"])
+        return int(res, 16)
+
     def vault_state(self, vault: str) -> dict:
-        # getMinDelay etc. not needed; read epoch + anchor via view selectors:
-        # epoch() = 0x94561e5? we use known storage-based reads instead:
-        # epoch (slot 12-ish) is fragile; use public getters via eth_call on known selectors.
-        # epoch() selector: keccak("epoch()")[:4]
-        from Crypto.Hash import keccak
-        def sel(sig: str) -> str:
-            h = keccak.new(digest_bits=256)
-            h.update(sig.encode())
-            return "0x" + h.hexdigest()[:8]
-        def call_vault(fn: str) -> int:
-            res = self.call("eth_call", [{"to": vault, "data": sel(fn)}, "latest"])
-            return int(res, 16)
         return {
-            "epoch": call_vault("epoch()"),
-            "anchor_nav": call_vault("epochAnchorNav()"),
-            "last_trade_at": call_vault("lastTradeAt()"),
-            "max_trade_bps": call_vault("maxTradeBps()"),
-            "min_interval": call_vault("minInterval()"),
+            "epoch": self._call_vault_uint(vault, "epoch()"),
+            "anchor_nav": self._call_vault_uint(vault, "epochAnchorNav()"),
+            "last_trade_at": self._call_vault_uint(vault, "lastTradeAt()"),
+            "max_trade_bps": self._call_vault_uint(vault, "maxTradeBps()"),
+            "min_interval": self._call_vault_uint(vault, "minInterval()"),
+            "daily_loss_bps": self._call_vault_uint(vault, "dailyLossBps()"),
+            "epoch_loss_units": self._call_vault_uint(vault, "epochLossUnits()"),
         }
+
+    # ---- writes / signing support ----
+    def nonce(self, address: str) -> int:
+        return int(self.call("eth_getTransactionCount", [address, "pending"]), 16)
+
+    def gas_fees(self) -> dict:
+        """EIP-1559 fee suggestion, falling back to eth_gasPrice."""
+        try:
+            block = self.call("eth_getBlockByNumber", ["latest", False])
+            base = int(block["baseFeePerGas"], 16)
+            tip = int(self.call("eth_maxPriorityFeePerGas", []), 16)
+        except Exception:  # noqa: BLE001 — pre-1559 or restricted node
+            gas_price = int(self.call("eth_gasPrice", []), 16)
+            return {"priority_fee": gas_price, "max_fee": gas_price * 2}
+        return {"priority_fee": tip, "max_fee": base * 2 + tip}
+
+    def estimate_gas(self, tx: dict) -> int:
+        try:
+            return int(self.call("eth_estimateGas", [tx]), 16)
+        except Exception:  # noqa: BLE001 — estimate can fail on state-dependent calls
+            return 600_000
+
+    def send_raw_transaction(self, raw: str) -> str:
+        return str(self.call("eth_sendRawTransaction", [raw]))
+
+    def wait_for_receipt(self, tx_hash: str, timeout: int = 180, poll: float = 2.0) -> dict:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            receipt = self.call("eth_getTransactionReceipt", [tx_hash])
+            if receipt:
+                return receipt
+            time.sleep(poll)
+        raise TimeoutError(f"no receipt for {tx_hash} within {timeout}s")
+
+
+class PriceFeed:
+    """Market data client.
+
+    There is no built-in stub: a stub makes the agent look alive while it can
+    never trade (RSI over too few points returns None and both strategy branches
+    stay shut). An unconfigured feed raises, and the caller halts loudly.
+    """
+
+    def __init__(self, cfg: PriceFeedConfig):
+        self.cfg = cfg
+
+    def series(self, token: str) -> tuple[list[float], float]:
+        """Returns (prices oldest→newest, volume_24h)."""
+        if not self.cfg.configured:
+            raise RuntimeError(
+                "price_feed.url is not configured — refusing to trade on synthetic data"
+            )
+        url = (
+            f"{self.cfg.url.rstrip('/')}"
+            f"?token={urllib.parse.quote(token)}&limit={self.cfg.series_limit}"
+        )
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=self.cfg.timeout_sec) as resp:
+            body = json.loads(resp.read())
+        prices = [float(p) for p in body.get("prices", [])]
+        if not prices:
+            raise RuntimeError(f"price feed returned no prices for {token}")
+        return prices, float(body.get("volume_24h", 0.0))
 
 
 def rsi(prices: list[float], period: int = 14) -> Optional[float]:
@@ -109,12 +173,13 @@ class Screener:
         bal = self.chain.balance_of(token_addr, self.cfg.vault_address)
         usdg = self.cfg.strategy_tokens[0]  # convention: first strategy token is the stablecoin
         usdg_bal = self.chain.balance_of(usdg.address, self.cfg.vault_address)
-        _r = rsi(price_series, self.cfg.strategy.rsi_period)
         return Observation(
             ts=time.time(),
             token=token_name,
             price=price,
-            rsi=_r if _r is not None else 50.0,
+            # None is preserved: "not enough history" is a real state, and
+            # inventing 50.0 hid the fact that the agent could never trade.
+            rsi=rsi(price_series, self.cfg.strategy.rsi_period),
             volume_24h=volume_24h,
             vault_balance=bal,
             usdg_balance=usdg_bal,

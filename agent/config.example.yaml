@@ -43,6 +43,23 @@ llm:
 journal:
   path: ./journal.ndjson
   epoch_checkpoint: true     # submit head hash via vault.rollEpoch
+  # POST sealed entries here so the backend's /journal has a source.
+  # Empty string disables publishing (the local chain still verifies offline).
+  publish_url: ""            # e.g. http://127.0.0.1:8000
+
+# market data — REQUIRED. There is no built-in stub: without a feed the agent
+# halts instead of pretending to trade on synthetic prices.
+# GET ${url}?token=<name>&limit=<n> must return {"prices": [...], "volume_24h": n}
+# Point this at your own market-data source (exchange API, pool reader, ...).
+price_feed:
+  url: ""                    # e.g. https://your-market-data-source/ohlc
+  timeout_sec: 15
+  series_limit: 200
+
+# routers the vault's executeSwap may call. The vault keeps the same allow-list
+# on-chain; the agent refuses to build a call the vault would reject.
+allowed_routers: []          # e.g. ["0x0000000000000000000000000000000000001234"]
+router_swap_sig: "swap(address,address,uint256,uint256,address)"
 
 # loop
 loop:

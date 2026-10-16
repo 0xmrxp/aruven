@@ -46,6 +46,25 @@ class LLMConfig:
 class JournalConfig:
     path: str = "./journal.ndjson"
     epoch_checkpoint: bool = True
+    # Where to publish sealed entries so the backend's /journal has a source.
+    # Empty disables publishing (the local chain still verifies offline).
+    publish_url: str = ""
+
+
+@dataclass
+class PriceFeedConfig:
+    """Market data source. There is deliberately no built-in stub: an
+    unconfigured feed halts the loop instead of silently producing no trades."""
+
+    url: str = ""
+    timeout_sec: int = 15
+    # GET `${url}?token=<name>&limit=<n>` must return
+    #   {"prices": [float, ...], "volume_24h": float}
+    series_limit: int = 200
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.url.strip())
 
 
 @dataclass
@@ -67,6 +86,11 @@ class AgentConfig:
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     journal: JournalConfig = field(default_factory=JournalConfig)
+    price_feed: PriceFeedConfig = field(default_factory=PriceFeedConfig)
+    # Router allow-list. The vault keeps the same list on-chain; the agent
+    # refuses to build a call for a router the vault would reject anyway.
+    allowed_routers: list[str] = field(default_factory=list)
+    router_swap_sig: str = "swap(address,address,uint256,uint256,address)"
     loop_interval_sec: int = 900
 
     @property
@@ -79,6 +103,10 @@ class AgentConfig:
         return key
 
 
+def _is_address(value: object) -> bool:
+    return isinstance(value, str) and value.startswith("0x") and len(value) == 42
+
+
 def load_config(path: str) -> AgentConfig:
     with open(path) as f:
         raw = yaml.safe_load(f) or {}
@@ -87,10 +115,12 @@ def load_config(path: str) -> AgentConfig:
         strategy = StrategyConfig(**(raw.get("strategy") or {}))
         llm = LLMConfig(**(raw.get("llm") or {}))
         journal = JournalConfig(**(raw.get("journal") or {}))
+        price_feed = PriceFeedConfig(**(raw.get("price_feed") or {}))
         tokens = [
             TokenConfig(**t) for t in (raw.get("strategy_tokens") or [])
         ]
         loop = (raw.get("loop") or {}).get("interval_sec", 900)
+        routers = [str(r) for r in (raw.get("allowed_routers") or [])]
         cfg = AgentConfig(
             rpc_url=raw["rpc_url"],
             chain_id=int(raw["chain_id"]),
@@ -104,6 +134,11 @@ def load_config(path: str) -> AgentConfig:
             strategy=strategy,
             llm=llm,
             journal=journal,
+            price_feed=price_feed,
+            allowed_routers=routers,
+            router_swap_sig=raw.get(
+                "router_swap_sig", "swap(address,address,uint256,uint256,address)"
+            ),
             loop_interval_sec=int(loop),
         )
     except KeyError as e:
@@ -112,10 +147,20 @@ def load_config(path: str) -> AgentConfig:
         raise ConfigError(f"invalid config: {e}") from e
 
     for token in cfg.strategy_tokens:
-        if not token.address.startswith("0x") or len(token.address) != 42:
+        if not _is_address(token.address):
             raise ConfigError(f"bad token address for {token.name}: {token.address}")
-    if not cfg.vault_address.startswith("0x") or len(cfg.vault_address) != 42:
-        raise ConfigError(f"bad vault address: {cfg.vault_address}")
+    for name, addr in [("vault", cfg.vault_address), ("aruven token", cfg.aruven_token)]:
+        if not _is_address(addr):
+            raise ConfigError(f"bad {name} address: {addr}")
+    for r in cfg.allowed_routers:
+        if not _is_address(r):
+            raise ConfigError(f"bad router address: {r}")
     if cfg.risk.max_trade_bps > 10_000:
         raise ConfigError("max_trade_bps above 10000")
+    if not 0 <= cfg.risk.daily_loss_bps <= 10_000:
+        raise ConfigError("daily_loss_bps must be within 0..10000")
+    if not 0 <= cfg.risk.max_slippage_bps < 10_000:
+        raise ConfigError("max_slippage_bps must be within 0..9999")
+    if not cfg.strategy_tokens:
+        raise ConfigError("at least one strategy token is required")
     return cfg
