@@ -6,14 +6,10 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {AruvenHook} from "./AruvenHook.sol";
 
 /// @title AruvenFeeHook
-/// @notice Concrete deployable ARUVEN hook. The fee-split routing is simple and
-///         verifiable: all taken fees go to the vault. The burn leg happens in
-///         the vault (`burnVaultTokens`), not in the hook — so every deflation
-///         event is an ERC-20 Burn event from the vault, trivially auditable.
-///
-///         The "revenue share for ARUVEN deployments made by third parties via
-///         the factory" is enforced by the AruvenFactory's bytecode, not by
-///         this contract's parameters (see ARCHITECTURE.md 7a).
+/// @notice Concrete deployable ARUVEN hook for the flagship pools: 100% of the
+///         taken fee goes to the vault. The burn leg happens in the vault
+///         (`burnVaultTokens`), not in the hook — so every deflation event is an
+///         ERC-20 Burn event from the vault, trivially auditable.
 contract AruvenFeeHook is AruvenHook {
     /// @notice Governance timelock: the only address allowed to set pool fees.
     address public immutable hookGovernance;
