@@ -20,7 +20,12 @@ executor_private_key_env: ARUVEN_EXECUTOR_KEY
 risk:
   max_trade_bps: 500        # match vault
   daily_loss_bps: 200       # match vault
-  min_interval_sec: 3600    # match vault
+  # Must be >= the vault's minInterval (set via governance setRiskParams).
+  # A SHORTER value here makes the agent attempt trades the vault reverts with
+  # CooldownActive, which halts it — so keep this at or above the vault's.
+  # With episode-triggered entries this can still be short (e.g. 4h) without the
+  # agent over-trading, because a persistent signal no longer re-fires per bar.
+  min_interval_sec: 14400   # 4h
   max_slippage_bps: 50
   min_usdg_balance: 0       # don't trade below this
 
@@ -28,9 +33,9 @@ risk:
 strategy:
   name: mean_reversion
   rsi_period: 14
-  rsi_low: 30
-  rsi_high: 70
-  min_edge_bps: 25          # only trade when expected edge >= 25 bps
+  rsi_low: 25               # band around the extremes (was 30/70)
+  rsi_high: 75
+  min_edge_bps: 60          # only trade when expected edge >= 60 bps
 
 # LLM review (optional; set to null to disable)
 llm:
@@ -43,7 +48,40 @@ llm:
 journal:
   path: ./journal.ndjson
   epoch_checkpoint: true     # submit head hash via vault.rollEpoch
+  # POST sealed entries here so the backend's /journal has a source.
+  # Empty string disables publishing (the local chain still verifies offline).
+  publish_url: ""            # e.g. http://127.0.0.1:8000
+
+# market data — REQUIRED. There is no built-in stub: without a feed the agent
+# halts instead of pretending to trade on synthetic prices.
+#
+# source: hyperliquid (default, keyless, real OHLCV candles) | binance | generic
+#   hyperliquid — no API key; symbols are upper-cased unless mapped below
+#   binance     — no API key; symbols get USDT appended unless mapped below
+#   generic     — your own endpoint: GET ${url}?token=<n>&limit=<n> returns
+#                 {"prices": [...oldest first...], "volume_24h": n}
+# fallback_source is retried once when the primary fails.
+price_feed:
+  source: hyperliquid
+  fallback_source: binance   # "" to disable the fallback
+  interval: 1h               # 1m, 5m, 15m, 30m, 1h, 2h, 4h, 1d
+  url: ""                    # only used by source: generic
+  timeout_sec: 15
+  # The lookback the RSI and z-score are computed over. 200 hourly bars ≈ 8 days.
+  series_limit: 200
+  # token name -> source symbol, when they differ
+  symbols:
+    nvda: NVDA
+    usdg: ""
+
+# routers the vault's executeSwap may call. The vault keeps the same allow-list
+# on-chain; the agent refuses to build a call the vault would reject.
+allowed_routers: []          # e.g. ["0x0000000000000000000000000000000000001234"]
+router_swap_sig: "swap(address,address,uint256,uint256,address)"
 
 # loop
 loop:
-  interval_sec: 900
+  interval_sec: 900          # poll every 15 min; a 1h candle is re-read a few
+                             # times, but the signal tracker only trades on a
+                             # NEW episode, so polling faster does not mean
+                             # trading more

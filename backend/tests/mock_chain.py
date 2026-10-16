@@ -1,33 +1,50 @@
-"""Mock Robinhood Chain for backend E2E: serves logs + balances on 127.0.0.1:18560."""
+"""Mock Robinhood Chain for local backend E2E: serves logs + balances on
+127.0.0.1:18560.
+
+Run from anywhere: the repository root is derived from this file's location so
+the mock works on any machine (it previously hardcoded an author's home dir).
+"""
 import json
+import pathlib
 import sys
 import threading
 import time
 
-sys.path.insert(0, "/root/aruven/backend")
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from aruven_backend.indexer import TOPICS
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+from http.server import BaseHTTPRequestHandler, HTTPServer  # noqa: E402
+from aruven_backend.indexer import TOPICS  # noqa: E402
 
 VAULT = "0x000000000000000000000000000000000000dead"
 FACTORY = "0x000000000000000000000000000000000000cafe"
 USDG = "0x0000000000000000000000000000000000000001"
 NVDA = "0x0000000000000000000000000000000000000002"
 TOKEN = "0x000000000000000000000000000000000000beef"
+HOOK = "0x00000000000000000000000000000000000000ff"
 BAL = {USDG: 1000 * 10**18, NVDA: 4 * 10**18, TOKEN: 2_000_000 * 10**18}
+
+
+def _word(v: int) -> str:
+    return hex(v)[2:].rjust(64, "0")
+
 
 logs = [
     {"address": VAULT, "blockNumber": "0x5", "transactionHash": "0x" + "a" * 64, "logIndex": "0x0",
      "topics": [TOPICS["fee"], "0x" + "00" * 12 + USDG[2:]],
-     "data": "0x" + hex(1000 * 10**18)[2:].rjust(128, "0")},
+     "data": "0x" + _word(1000 * 10**18)},
     {"address": VAULT, "blockNumber": "0x6", "transactionHash": "0x" + "b" * 64, "logIndex": "0x0",
-     "topics": [TOPICS["burn"]], "data": "0x" + hex(500 * 10**18)[2:].rjust(128, "0")},
+     "topics": [TOPICS["burn"]], "data": "0x" + _word(500 * 10**18)},
     {"address": VAULT, "blockNumber": "0x7", "transactionHash": "0x" + "c" * 64, "logIndex": "0x0",
      "topics": [TOPICS["trade"], "0x" + "00" * 12 + USDG[2:], "0x" + "00" * 12 + NVDA[2:]],
-     "data": "0x" + hex(50 * 10**18)[2:].rjust(64, "0") + hex(0)[2:].rjust(64, "0")},
-    {"address": FACTORY, "blockNumber": "0x8", "transactionHash": "0x" + "d" * 64, "logIndex": "0x0",
+     # amountIn, amountOut, reasonHash (TradeExecuted indexes only the two tokens)
+     "data": "0x" + _word(50 * 10**18) + _word(0) + "cd" * 32},
+    {"address": VAULT, "blockNumber": "0x8", "transactionHash": "0x" + "e" * 64, "logIndex": "0x0",
+     "topics": [TOPICS["epoch"], "0x" + _word(1)],
+     "data": "0x" + "ab" * 32},  # journalHead lives in data, not topics
+    {"address": FACTORY, "blockNumber": "0x9", "transactionHash": "0x" + "d" * 64, "logIndex": "0x0",
      "topics": [TOPICS["launch"], "0x" + "00" * 12 + TOKEN[2:], "0x" + "00" * 12 + VAULT[2:],
                 "0x" + "00" * 12 + "ee" * 20],
-     "data": "0x" + hex(1500)[2:].rjust(64, "0") + "4" * 64},
+     # hook, feeShareBps, metaHash
+     "data": "0x" + _word(int(HOOK, 16)) + _word(1500) + "4" * 64},
 ]
 
 

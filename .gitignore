@@ -1,8 +1,30 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Node / Next.js ---
 node_modules/
 dist/
 .next/
+
+# --- Foundry ---
+out/
+cache/
+foundry-cache/
+broadcast/
+
+# --- Secrets & local state ---
 .env
 .env.*
-cache/
-out/
-foundry-cache/
+*.ndjson
+aruven.db
+aruven.db-*
+
+# --- OS ---
+.DS_Store

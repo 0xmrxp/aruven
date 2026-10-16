@@ -1,0 +1,15 @@
+# aruven-agent — runtime dependencies
+#
+# The agent itself is stdlib-only except for these:
+#   PyYAML     — config parsing (aruven_agent/config.py)
+#   pycryptodome — keccak-256 for selectors and EIP-1559 hashing
+#                  (via aruven_common.eip1559)
+#
+# Install:  pip install -r requirements.txt
+# Run from the repository root so `aruven_common` is importable, e.g.
+#   python -m aruven_agent.main --config config.yaml --dry-run
+# (agent/aruven_agent/__init__.py also puts the repo root on sys.path, so
+# running from agent/ works too.)
+
+PyYAML>=6.0
+pycryptodome>=3.20

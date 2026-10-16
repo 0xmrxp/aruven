@@ -6,6 +6,10 @@ solc = "0.8.26" # Uniswap v4 requires 0.8.26
 optimizer = true
 optimizer_runs = 400
 evm_version = "cancun"
+# AruvenFactory.launch deploys three contracts plus a hook, which is more local
+# state than the legacy codegen can keep on the stack. Uniswap v4 projects run
+# the IR pipeline for the same reason.
+via_ir = true
 
 # v4-core uses custom transcript testing; silence warnings from vendored deps
 skip = ["lib/v4-core/test"]

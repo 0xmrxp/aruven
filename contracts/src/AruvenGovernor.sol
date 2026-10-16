@@ -12,13 +12,17 @@ import {TimelockController} from "@openzeppelin/contracts/governance/TimelockCon
 /// @title AruvenGovernor
 /// @notice Governance for the ARUVEN treasury. All parameter changes, role
 ///         grants, and withdrawals flow through proposals -> vote -> 48h
-///         timelock. Same battle-tested OZ stack verified on the $AI vault,
-///         but with the defaults documented up front:
+///         timelock:
 ///         - voting delay: 7200 s (2 h)
 ///         - voting period: 3 days
 ///         - proposal threshold: 0.4% of supply
 ///         - quorum: 5% of supply
 ///         - timelock delay: 48 h
+///
+/// @dev The clock is TIMESTAMPS, matching `AruvenToken` and matching the
+///      durations above. With a block-number clock these numbers silently meant
+///      7200 blocks and 259200 blocks (~36 days at 12s blocks), so none of the
+///      documented timings held.
 contract AruvenGovernor is GovernorCountingSimple, GovernorVotes, GovernorVotesQuorumFraction, GovernorTimelockControl {
     constructor(IVotes token, TimelockController timelock)
         Governor("AruvenGovernor")
@@ -28,11 +32,11 @@ contract AruvenGovernor is GovernorCountingSimple, GovernorVotes, GovernorVotesQ
     {}
 
     function votingDelay() public pure override returns (uint256) {
-        return 7_200; // 2 hours
+        return 7_200; // 2 hours, in seconds
     }
 
     function votingPeriod() public pure override returns (uint256) {
-        return 3 days;
+        return 3 days; // 259200 seconds
     }
 
     function proposalThreshold() public pure override returns (uint256) {
@@ -44,14 +48,14 @@ contract AruvenGovernor is GovernorCountingSimple, GovernorVotes, GovernorVotesQ
         return super._executor();
     }
 
-    // ERC6372 clock: block number mode
+    // ERC6372 clock: timestamp mode (must match the token's clock).
     function clock() public view override(Governor, GovernorVotes) returns (uint48) {
-        return uint48(block.number);
+        return uint48(block.timestamp);
     }
 
     // solhint-disable-next-line func-name-mixedcase
     function CLOCK_MODE() public pure override(Governor, GovernorVotes) returns (string memory) {
-        return "mode=blocknumber&from=default";
+        return "mode=timestamp";
     }
 
     // The functions below are overrides required by Solidity.
@@ -94,6 +98,4 @@ contract AruvenGovernor is GovernorCountingSimple, GovernorVotes, GovernorVotesQ
     ) internal override(Governor, GovernorTimelockControl) returns (uint256) {
         return super._cancel(targets, values, calldatas, descriptionHash);
     }
-
-
 }
