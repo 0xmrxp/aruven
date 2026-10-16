@@ -20,10 +20,17 @@ python -m aruven_agent.main --config config.example.yaml --dry-run   # paper mod
 python -m aruven_agent.main --config config.yaml                     # live
 ```
 
-`price_feed.url` and `allowed_routers` must be set before the agent will start:
-it refuses to trade on synthetic prices, and it refuses to build a call the
-vault would reject anyway. Run from the repository root (or from `agent/`) so the
-shared `aruven_common` package is importable.
+`allowed_routers` must be set, and `price_feed` must name a source
+(`hyperliquid` and `binance` need no key; `generic` needs your own `url`), before
+the agent will start: it refuses to trade on synthetic prices, and it refuses to
+build a call the vault would reject anyway. Check the feed without trading:
+
+```
+python -m aruven_agent.main --config config.yaml --check-feed
+```
+
+Run from the repository root (or from `agent/`) so the shared `aruven_common`
+package is importable.
 
 ## Safety model
 

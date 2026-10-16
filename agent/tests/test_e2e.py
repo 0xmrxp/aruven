@@ -76,9 +76,10 @@ class MockRPC(BaseHTTPRequestHandler):
 class FakeFeed:
     """Stands in for the market-data client (the real one is HTTP)."""
 
-    def __init__(self, series_by_token, volume=5_000_000.0):
+    def __init__(self, series_by_token, volume=5_000_000.0, source="fake"):
         self.series_by_token = series_by_token
         self.volume = volume
+        self.last_source = source
 
     def series(self, token):
         return self.series_by_token.get(token, [1.0] * 21), self.volume

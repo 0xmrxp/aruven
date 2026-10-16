@@ -3,13 +3,12 @@ from __future__ import annotations
 
 import json
 import time
-import urllib.parse
 import urllib.request
 from typing import Optional
 
 from aruven_common.eip1559 import keccak256
 
-from .config import AgentConfig, PriceFeedConfig
+from .config import AgentConfig
 from .types import Observation
 
 
@@ -95,36 +94,6 @@ class ChainClient:
                 return receipt
             time.sleep(poll)
         raise TimeoutError(f"no receipt for {tx_hash} within {timeout}s")
-
-
-class PriceFeed:
-    """Market data client.
-
-    There is no built-in stub: a stub makes the agent look alive while it can
-    never trade (RSI over too few points returns None and both strategy branches
-    stay shut). An unconfigured feed raises, and the caller halts loudly.
-    """
-
-    def __init__(self, cfg: PriceFeedConfig):
-        self.cfg = cfg
-
-    def series(self, token: str) -> tuple[list[float], float]:
-        """Returns (prices oldest→newest, volume_24h)."""
-        if not self.cfg.configured:
-            raise RuntimeError(
-                "price_feed.url is not configured — refusing to trade on synthetic data"
-            )
-        url = (
-            f"{self.cfg.url.rstrip('/')}"
-            f"?token={urllib.parse.quote(token)}&limit={self.cfg.series_limit}"
-        )
-        req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=self.cfg.timeout_sec) as resp:
-            body = json.loads(resp.read())
-        prices = [float(p) for p in body.get("prices", [])]
-        if not prices:
-            raise RuntimeError(f"price feed returned no prices for {token}")
-        return prices, float(body.get("volume_24h", 0.0))
 
 
 def rsi(prices: list[float], period: int = 14) -> Optional[float]:

@@ -54,17 +54,29 @@ class JournalConfig:
 @dataclass
 class PriceFeedConfig:
     """Market data source. There is deliberately no built-in stub: an
-    unconfigured feed halts the loop instead of silently producing no trades."""
+    unconfigured feed halts the loop instead of silently producing no trades.
 
-    url: str = ""
+    `source` picks a keyless public source (recommended: `hyperliquid`, which
+    serves real OHLCV candles). `generic` points at a user-hosted endpoint.
+    `fallback_source` is retried once when the primary fails.
+    """
+
+    source: str = ""            # hyperliquid | binance | generic ("" = infer from url)
+    url: str = ""               # only for source: generic
+    fallback_source: str = ""   # optional; e.g. binance behind hyperliquid
+    interval: str = "1h"        # candle interval: 1m, 5m, 15m, 30m, 1h, 2h, 4h, 1d
     timeout_sec: int = 15
-    # GET `${url}?token=<name>&limit=<n>` must return
-    #   {"prices": [float, ...], "volume_24h": float}
+    # How many closes the feed returns. This is the lookback the RSI and
+    # z-score are computed over, so it also sets how "slow" the signal is.
     series_limit: int = 200
+    # token name -> source symbol, when they differ (e.g. nvda -> NVDA, or a
+    # Binance pair like BTCUSDT). Missing entries fall back to upper-casing the
+    # token name (Hyperliquid) or appending USDT (Binance).
+    symbols: dict[str, str] = field(default_factory=dict)
 
     @property
     def configured(self) -> bool:
-        return bool(self.url.strip())
+        return bool(self.source.strip() or self.url.strip())
 
 
 @dataclass
@@ -163,4 +175,11 @@ def load_config(path: str) -> AgentConfig:
         raise ConfigError("max_slippage_bps must be within 0..9999")
     if not cfg.strategy_tokens:
         raise ConfigError("at least one strategy token is required")
+    if cfg.price_feed.configured:
+        if not cfg.price_feed.source.strip() and not cfg.price_feed.url.strip():
+            raise ConfigError("price_feed needs a source or a url")
+        if not 20 <= cfg.price_feed.series_limit <= 2_000:
+            raise ConfigError("price_feed.series_limit must be within 20..2000")
+        if cfg.price_feed.timeout_sec <= 0:
+            raise ConfigError("price_feed.timeout_sec must be positive")
     return cfg

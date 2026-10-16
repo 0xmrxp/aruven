@@ -19,7 +19,7 @@ from aruven_agent.executor import EXECUTE_SWAP_SIG, Executor, encode_execute_swa
 from aruven_agent.journal import Journal
 from aruven_agent.risk import RiskGate
 from aruven_agent.screen import rsi, zscore
-from aruven_agent.strategy import MeanReversionStrategy, Scorer
+from aruven_agent.strategy import MeanReversionStrategy, Scorer, SignalTracker
 from aruven_agent.types import Observation, Proposal, Score
 
 
@@ -301,6 +301,263 @@ strategy_tokens:
             body = self.BASE.replace('strategy_tokens:\n  - name: usdg\n    address: "0x' + "a" * 40 + '"\n  - name: nvda\n    address: "0x' + "b" * 40 + '"\n', "strategy_tokens: []\n")
             with self.assertRaises(ConfigError):
                 load_config(self._write(d, body))
+
+
+class TestSignalTracker(unittest.TestCase):
+    """Episode-triggered entries: the fix for ~63 trades/month."""
+
+    def test_start_then_silent_while_signal_persists(self):
+        t = SignalTracker()
+        self.assertEqual(t.update("nvda", "buy"), "start")
+        # the condition stays true for many bars — must NOT re-fire
+        for _ in range(20):
+            self.assertIsNone(t.update("nvda", "buy"))
+
+    def test_end_then_new_start(self):
+        t = SignalTracker()
+        t.update("nvda", "buy")
+        self.assertEqual(t.update("nvda", None), "end")
+        self.assertIsNone(t.update("nvda", None))
+        self.assertEqual(t.update("nvda", "buy"), "start")
+
+    def test_direction_flip_is_a_change(self):
+        t = SignalTracker()
+        t.update("nvda", "buy")
+        self.assertEqual(t.update("nvda", "sell"), "change")
+        self.assertEqual(t.current("nvda"), "sell")
+
+    def test_tokens_are_tracked_independently(self):
+        t = SignalTracker()
+        self.assertEqual(t.update("nvda", "buy"), "start")
+        self.assertEqual(t.update("gold", "buy"), "start")
+        self.assertIsNone(t.update("nvda", "buy"))
+
+    def test_reset(self):
+        t = SignalTracker()
+        t.update("nvda", "buy")
+        t.reset("nvda")
+        self.assertEqual(t.update("nvda", "buy"), "start")
+
+
+class TestCadence(unittest.TestCase):
+    """Locks the trade cadence: a persistent signal must produce ONE trade.
+
+    Regression guard for the bug where the strategy fired on every bar the
+    condition held, measured at ~63 trades/month on real 1h data.
+    """
+
+    def _run(self, series, cfg):
+        """Replay the production path over a series; return the trades taken."""
+        scorer = Scorer(cfg)
+        strat = MeanReversionStrategy(cfg)
+        tracker = SignalTracker()
+        obs_trades = []
+        window = 40  # small so the synthetic series is enough
+        for i in range(window, len(series)):
+            s = series[i - window + 1:i + 1]
+            r = rsi(s, cfg.strategy.rsi_period)
+            if r is None:
+                continue
+            obs = Observation(ts=float(i), token="nvda", price=s[-1], rsi=r,
+                              volume_24h=0.0, vault_balance=int(10_000e18),
+                              usdg_balance=int(1_000_000e18),
+                              **{"epoch": 0, "epoch_anchor_nav": 0})
+            sc = scorer.score(obs, s)
+            kind = strat.signal(obs, sc)
+            if tracker.update("nvda", kind) not in ("start", "change"):
+                continue
+            prop = strat.propose(obs, sc)
+            if prop is not None:
+                obs_trades.append((i, kind))
+        return obs_trades
+
+    def _cfg(self, cooldown=3600):
+        return AgentConfig(
+            rpc_url="http://x", chain_id=46630, vault_address="0x" + "a" * 40,
+            aruven_token="0x" + "b" * 40,
+            strategy_tokens=[TokenConfig("usdg", "0x" + "c" * 40),
+                             TokenConfig("nvda", "0x" + "d" * 40)],
+            risk=RiskConfig(max_trade_bps=500, daily_loss_bps=200,
+                            min_interval_sec=cooldown, max_slippage_bps=50),
+            strategy=StrategyConfig(rsi_period=14, rsi_low=30, rsi_high=70,
+                                    min_edge_bps=25),
+        )
+
+    def _crash_then_flat(self, bars_in_crash=60):
+        """Steady 100s, a long dump, then flat at the bottom.
+
+        The RSI stays oversold for the whole flat stretch, so a level-triggered
+        strategy would trade on nearly every bar of it.
+        """
+        return [100.0] * 60 + [100.0 - i for i in range(1, 21)] + [80.0] * bars_in_crash
+
+    def test_persistent_signal_trades_once_not_per_bar(self):
+        series = self._crash_then_flat()
+        trades = self._run(series, self._cfg())
+        self.assertEqual(len(trades), 1, f"expected 1 trade, got {trades}")
+        self.assertEqual(trades[0][1], "buy")
+
+    def test_each_episode_trades_once_and_flips_side(self):
+        """Every distinct episode fires exactly one trade, on the right side.
+
+        The recovery leg in the middle is itself an overbought episode, so the
+        sequence is buy → sell → buy. Pinning the sides down is the point: a
+        level-triggered strategy would have produced dozens of trades here.
+        """
+        series = (
+            [100.0] * 60
+            + [100.0 - i for i in range(1, 21)]   # dump -> oversold episode
+            + [80.0] * 40                          # flat, signal persists
+            + [80.0 + i for i in range(1, 26)]     # rally -> overbought episode
+            + [105.0] * 40                         # flat, signal persists
+            + [105.0 - i * 1.5 for i in range(1, 21)]  # second dump
+            + [75.0] * 30
+        )
+        trades = self._run(series, self._cfg())
+        kinds = [k for _, k in trades]
+        self.assertEqual(kinds, ["buy", "sell", "buy"], f"got {trades}")
+
+    def test_no_trade_while_signal_persists_after_first(self):
+        """The bars between episodes must produce nothing."""
+        series = self._crash_then_flat(bars_in_crash=150)
+        trades = self._run(series, self._cfg())
+        self.assertEqual(len(trades), 1, f"got {trades}")
+        self.assertEqual(trades[0][1], "buy")
+
+    def test_cooldown_does_not_multiply_trades(self):
+        """A short cooldown must not re-introduce per-bar firing."""
+        series = self._crash_then_flat(bars_in_crash=200)
+        short = self._run(series, self._cfg(cooldown=3600))
+        self.assertEqual(len(short), 1)
+
+
+class TestFeeds(unittest.TestCase):
+    """Market-data adapters (HTTP is stubbed; no network in tests)."""
+
+    def _cfg(self, **kw):
+        return PriceFeedConfig(**kw)
+
+    def test_hyperliquid_parses_candles_and_sums_volume(self):
+        from aruven_agent import feeds
+
+        candles = [{"c": str(100 + i), "v": "2.0"} for i in range(30)]
+        orig = feeds._post_json
+        feeds._post_json = lambda url, payload, timeout: candles
+        try:
+            prices, vol = feeds.HyperliquidFeed(self._cfg(source="hyperliquid", interval="1h")).series("btc")
+        finally:
+            feeds._post_json = orig
+        self.assertEqual(len(prices), 30)
+        self.assertEqual(prices[0], 100.0)
+        self.assertEqual(prices[-1], 129.0)
+        self.assertEqual(vol, 48.0)  # 24 hourly bars * 2.0
+
+    def test_hyperliquid_symbol_mapping(self):
+        from aruven_agent import feeds
+
+        seen = {}
+
+        def spy(url, payload, timeout):
+            seen.update(payload["req"])
+            return [{"c": "1", "v": "0"}]
+
+        orig = feeds._post_json
+        feeds._post_json = spy
+        try:
+            feed = feeds.HyperliquidFeed(self._cfg(source="hyperliquid",
+                                                  symbols={"nvda": "NVDA"}))
+            feed.series("nvda")
+            self.assertEqual(seen["coin"], "NVDA")
+            feed.series("btc")  # unmapped -> upper-cased
+            self.assertEqual(seen["coin"], "BTC")
+        finally:
+            feeds._post_json = orig
+
+    def test_binance_appends_usdt_unless_mapped(self):
+        from aruven_agent import feeds
+
+        seen = {}
+
+        def spy(url, timeout):
+            seen["url"] = url
+            return [[0, "0", "0", "0", "100.5", "3.0"]]
+
+        orig = feeds._get_json
+        feeds._get_json = spy
+        try:
+            feed = feeds.BinanceFeed(self._cfg(source="binance"))
+            feed.series("btc")
+            self.assertIn("BTCUSDT", seen["url"])
+            feed.series("ethusdc")
+            self.assertIn("ETHUSDC", seen["url"])
+        finally:
+            feeds._get_json = orig
+
+    def test_fallback_is_used_when_primary_fails(self):
+        from aruven_agent import feeds
+
+        cfg = self._cfg(source="hyperliquid", fallback_source="binance")
+        feed = feeds.PriceFeed(cfg)
+
+        def boom(token):
+            raise feeds.FeedError("primary down")
+
+        feed.primary.series = boom
+        self.assertIsNotNone(feed.fallback)
+        feed.fallback.series = lambda token: ([1.0, 2.0, 3.0], 7.0)
+        prices, vol = feed.series("btc")
+        self.assertEqual(prices, [1.0, 2.0, 3.0])
+        self.assertEqual(feed.last_source, "binance")
+
+    def test_all_sources_failing_raises(self):
+        from aruven_agent import feeds
+
+        feed = feeds.PriceFeed(self._cfg(source="hyperliquid", fallback_source="binance"))
+
+        def boom(token):
+            raise feeds.FeedError("down")
+
+        feed.primary.series = boom
+        feed.fallback.series = boom
+        with self.assertRaises(feeds.FeedError) as ctx:
+            feed.series("btc")
+        self.assertIn("all sources failed", str(ctx.exception))
+
+    def test_unknown_source_rejected(self):
+        from aruven_agent import feeds
+
+        with self.assertRaises(feeds.FeedError):
+            feeds.PriceFeed(self._cfg(source="nosuchsource"))
+
+    def test_no_source_configured_rejected(self):
+        from aruven_agent import feeds
+
+        with self.assertRaises(feeds.FeedError):
+            feeds.PriceFeed(self._cfg())
+
+    def test_generic_requires_url(self):
+        from aruven_agent import feeds
+
+        with self.assertRaises(feeds.FeedError):
+            feeds.GenericFeed(self._cfg(source="generic"))
+
+    def test_generic_parses_documented_shape(self):
+        from aruven_agent import feeds
+
+        orig = feeds._get_json
+        feeds._get_json = lambda url, timeout: {"prices": [1.0, 2.0], "volume_24h": 5.0}
+        try:
+            prices, vol = feeds.GenericFeed(self._cfg(source="generic", url="http://x")).series("btc")
+        finally:
+            feeds._get_json = orig
+        self.assertEqual(prices, [1.0, 2.0])
+        self.assertEqual(vol, 5.0)
+
+    def test_unsupported_interval_rejected(self):
+        from aruven_agent import feeds
+
+        with self.assertRaises(feeds.FeedError):
+            feeds.interval_ms("3h")
 
 
 if __name__ == "__main__":
