@@ -8,7 +8,7 @@ Next.js 15 dashboard: proof first, then story.
 |---|---|
 | `/` | Live vault NAV, holdings, fee inflow, trade list, and the agent journal feed |
 | `/journal` | The full hash-chained decision log with prev-hash links |
-| `/deployments` | Directory of third-party factory launches (indexed from `Launch` events only) |
+| `/deployments` | Directory of third-party factory launches (indexed from `Launch` events only); the `verified` badge is derived from the indexed fee share |
 
 ## Run
 

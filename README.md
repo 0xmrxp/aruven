@@ -42,8 +42,8 @@ An open-source autonomous trading agent manages a fully on-chain, verifiable tre
 1. **Trades pay fees into the vault.** Every $ARUVEN buy and sell on the v4 pools routes a protocol fee to the vault, enforced by the hook.
 2. **The agent works for the vault.** It screens, sizes, risk-gates, and executes swaps with vault funds. Its entire decision journal is published.
 3. **The chain is the auditor.** Vault holdings, PnL, and trade history are direct RPC reads — the same numbers the frontend shows, from the same source of truth.
-4. **Holders govern the treasury.** Timelock + Governor (the same battle-tested OZ stack verified on $AI's vault, but with the defaults actually documented): 2-day minimum delay, public proposal/vote.
-5. **Value accrual.** Trading volume → fees → vault grows → circulating supply shrinks via scheduled burns. The agent's job is to make the vault's holdings outperform its inflow.
+4. **Holders govern the treasury.** Timelock + Governor (the same battle-tested OZ stack verified on $AI's vault, but with the defaults actually documented): 2-day minimum delay, public proposal/vote. The governor runs on a **timestamp** clock, so the documented delays are real wall-clock durations.
+5. **Value accrual.** Trading volume → fees → vault grows → the vault burns its own $ARUVEN on the epoch schedule. The agent's job is to make the vault's holdings outperform its inflow.
 
 ## Why now
 
@@ -54,25 +54,32 @@ An open-source autonomous trading agent manages a fully on-chain, verifiable tre
 ## Roadmap
 
 - **Phase 0 — Foundations** ✅ repo, architecture docs, contract design
-- **Phase 1 — Contracts** ✅ code + tests written; pending: testnet deploy + audit review (see `contracts/`)
-- **Phase 2 — Agent** ✅ code + tests written (`agent/`): pipeline, risk gates, LLM review, hash-chained journal, dry-run executor; pending: live tx signer + price feed (Phase 3 wiring)
-- **Phase 3 — Frontend + Backend** ✅ (`backend/`, `frontend/`): indexer, REST API with /verify trust endpoint, EIP-1559 signer, Next.js dashboard; pending: deploy to VPS, pool-spot NAV, governance proposal reads
+- **Phase 1 — Contracts** ✅ code + tests (`contracts/`): token, vault, hook, split hook, governor, factory. Pending: v4 PoolManager integration test, testnet deploy + audit
+- **Phase 2 — Agent** ✅ code + tests (`agent/`): pipeline, risk gates, LLM review, hash-chained journal, EIP-1559 signing and broadcast, live price feed (no stub)
+- **Phase 3 — Frontend + Backend** ✅ (`backend/`, `frontend/`): indexer, REST API with `/verify` and journal intake, Next.js dashboard. Pending: pool-spot NAV, governance proposal reads
 - **Phase 4 — Launch**: fair-launch distribution, listing, agent live
 
 ## Repository layout
 
 ```
 aruven/
-├── docs/            # architecture, tokenomics, agent spec, launch plan
-├── contracts/       # foundry project: token, vault, hook, governance (Phase 1)
+├── docs/            # architecture, tokenomics, agent spec
+├── contracts/       # foundry project: token, vault, hooks, governance (Phase 1)
 ├── agent/           # the autonomous trader (Phase 2)
+├── backend/         # indexer + REST API (Phase 3)
 ├── frontend/        # proof-of-reserve + governance dashboard (Phase 3)
-└── README.md
+└── aruven_common/   # secp256k1 + EIP-1559 signing, shared by agent and backend
 ```
+
+`aruven_common` is deliberately one copy: the agent signs transactions and the
+backend signs transactions, and both must produce byte-identical results.
 
 ## Status
 
-Pre-launch. Design phase. Nothing here is an offer to sell securities, and nothing in the token design guarantees profit. The agent can lose money; that risk is disclosed, journaled, and visible to everyone — which is the point.
+Pre-launch. Nothing here is an offer to sell securities, and nothing in the
+token design guarantees profit. The agent can lose money; the vault bounds how
+much and how fast it can lose, and the loss is disclosed, journaled, and visible
+to everyone — which is the point.
 
 ## License
 

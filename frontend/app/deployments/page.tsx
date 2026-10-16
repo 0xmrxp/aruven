@@ -36,10 +36,17 @@ export default function Deployments() {
           <tbody>
             {rows.map((r) => (
               <tr key={r.tx_hash}>
-                <td>{r.token.slice(0, 10)}… <span className="badge">verified</span></td>
+                <td>
+                  {r.token.slice(0, 10)}…{" "}
+                  {r.verified ? (
+                    <span className="badge">verified</span>
+                  ) : (
+                    <span className="muted">unverified</span>
+                  )}
+                </td>
                 <td>{r.vault.slice(0, 10)}…</td>
                 <td>{r.creator.slice(0, 10)}…</td>
-                <td>{r.fee_share_bps / 100}%</td>
+                <td>{r.fee_share_bps === null ? "—" : `${r.fee_share_bps / 100}%`}</td>
                 <td>{r.block}</td>
                 <td>{r.tx_hash.slice(0, 10)}…</td>
               </tr>

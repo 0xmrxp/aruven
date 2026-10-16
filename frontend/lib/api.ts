@@ -37,8 +37,11 @@ export interface DeploymentRow {
   token: string;
   vault: string;
   creator: string;
-  fee_share_bps: number;
+  hook: string;
+  fee_share_bps: number | null;
   meta_hash: string;
+  /** Derived by the backend from the launch event's fee share. */
+  verified: boolean;
 }
 
 export interface VerifyResponse {
